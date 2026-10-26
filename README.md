@@ -1,80 +1,86 @@
-# AI First-Touch SDR Agent
+# ai-sdr-agent
 
-[![CI](https://github.com/vrutikadani/ai-sdr-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/vrutikadani/ai-sdr-agent/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+[![CI](https://github.com/vrutikadani/ai-sdr-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/vrutikadani/ai-sdr-agent/actions/workflows/ci.yml)
 
-An AI agent that takes the first touch on every inbound lead. It scores the lead, writes a short personal email, reads the reply, and hands qualified buyers to a human SDR. Sales reps only work leads that are ready to talk.
+First touch on inbound leads: score the lead, send one short email, read the reply, and hand real buyers to an SDR with the reasons attached.
 
-> **About this repo.** I built and run the production version of this agent at a medical aesthetics device company (Claude API + HubSpot). This is a clean-room rebuild of the same design with synthetic data, so the code is public and runs with no keys. No company data, prompts or customer records are included.
+This is a reference implementation of an agent I designed and operate on the Claude API and HubSpot. It is rebuilt from scratch with synthetic leads. No production prompts, data or source code are included.
 
-## The business problem
+## Why it exists
 
-- Inbound web-form leads sat in a queue until an SDR had time to email them.
-- SDRs spent hours each week on first emails that went nowhere: students, job seekers, "just curious" fills.
-- Speed-to-lead was slow, and good leads cooled off.
+Inbound form fills waited in a queue until an SDR had time. Most of them were students, job seekers or "just curious," so SDR hours went into first emails that went nowhere while real buyers cooled off. The production version removed roughly 12 hours a week of that work.
 
-## What it does
+## Who decides what
+
+The design question was not "what can the model do" but "what should it never be allowed to decide."
+
+| Decision | Made by | Why |
+|---|---|---|
+| Is this lead worth an email? | Rules (`qualify.py`) | SDRs have to trust the routing, so every point has a written reason |
+| Is this address suppressed? | Rules (`crm.py`) | An opt-out is a legal fact, not a judgment call |
+| Is this draft safe to send? | Rules (`guardrails.py`) | Wrong recipient, unfilled template, banned claims and length are checkable |
+| What did the reply mean? | Model (`llm.py`) | The only genuinely ambiguous step |
+| What happens next? | Rules (`pipeline.py`) | The model's label picks a branch; it never writes to the CRM directly |
+| Anything uncertain | A person | Confidence below 0.6, an unclear label, or any guardrail failure goes to review |
+
+Two rules override everything else: an unsubscribe is honored even when the classifier is unsure, and a hard bounce suppresses the address permanently.
 
 ```mermaid
 flowchart LR
-    A[Web form lead] --> B[Score lead<br/>explainable rules]
-    B -->|score < 10| X[Stop / disqualify]
-    B -->|score >= 50| H[Hand off to SDR<br/>task + reasons]
-    B -->|in between| C[Draft first-touch email]
+    A[Form fill] --> B[Score: rules]
+    B -->|< 10| X[Stop]
+    B -->|>= 50| H[SDR task + reasons]
+    B -->|between| C[Draft from template]
     C --> G{Guardrails}
-    G -->|problem found| R[Human review queue]
-    G -->|clean| S[Send / queue for approval]
-    S --> Y[Lead replies]
-    Y --> K[Classify intent]
+    G -->|fail| R[Human review]
+    G -->|pass| S[Send or queue]
+    S --> Y[Reply]
+    Y --> K[Classify: model]
     K -->|interested| H
     K -->|question| C
     K -->|not now| N[Nurture]
-    K -->|unsubscribe / bounce| U[Suppress forever]
+    K -->|unsubscribe / bounce| U[Suppress]
     K -->|low confidence| R
 ```
 
-## Results in production
+## Rollout
 
-| Metric | Result |
+The agent has two modes. In `draft`, every email waits for a person. It stayed there until I had reviewed 50+ drafts and reply labels without a wrong one, and only then moved to `autonomous`. Even in `autonomous`, a guardrail failure still queues for review. The stop condition was agreed in advance: one email to the wrong person, or one wrong draft, pauses sending.
+
+## Failure modes
+
+| What goes wrong | What the system does |
 |---|---|
-| Manual SDR effort removed | **~12 hours / week** |
-| Drafts and reply labels reviewed by hand before going autonomous | **50+** |
-| Leads reaching SDRs | Only qualified ones, each with the reasons it qualified |
+| Model returns malformed or unexpected output | Parsed as `unclear` with confidence 0, goes to review |
+| Model is confident but wrong on an opt-out | Opt-out patterns are checked first; unsubscribe wins regardless of confidence |
+| Draft greets the wrong person or leaks a `{{variable}}` | Blocked before send, lead marked `needs_review` |
+| Same address submits the form again after opting out | Stopped at intake by the suppression list |
+| Bounce | Address suppressed; lead disqualified |
+| Out-of-office reply | Ignored; the agent waits for a real reply |
 
-## Design decisions (and why)
+## What I watch
 
-1. **Email first, not voice.** I tested voice as the first channel and dropped it. Email is cheaper, easier to audit, and buyers in this market reply to email.
-2. **Built custom on the Claude API + HubSpot,** not an off-the-shelf AI SDR tool. We needed our own scoring rules, our CRM fields, and full control of what gets sent.
-3. **Draft-for-approval rollout.** The agent started in `draft` mode. Every email waited for a human. Only after 50+ clean drafts did I switch to `autonomous`, and guardrail failures still go to a human.
-4. **Explainable scoring.** Every point has a written reason. SDRs see *why* a lead was routed, so they trust it.
-5. **Opt-outs win, always.** An unsubscribe is honored even when the classifier is unsure. Bounces are suppressed.
-6. **Clear pause signal.** A wrong recipient or a wrong draft stops the rollout. The guardrails check for both before anything sends.
+Reply-label mix week over week, review-queue volume, bounce and opt-out rates, and how many handoffs SDRs reject. A jump in any of them means the inputs changed (new form, new campaign, new market) before it means the model got worse.
 
-## Run it
+## Tradeoffs
+
+- **Email, not voice.** I tested voice as the first channel and dropped it. Email is cheaper, auditable, and this buyer replies to email.
+- **Built, not bought.** Off-the-shelf AI SDR tools couldn't use our scoring rules or CRM fields, or give us control of what gets sent.
+- **Templates the model fills, not free-form writing.** Less "personal," much easier to review and much harder to get wrong.
+
+## Limitations
+
+- Replies are matched to leads by ID. There is no email-thread reconciliation, which production needs.
+- Reply handling is not idempotent; the same reply processed twice would create a second SDR task.
+- The production check is human review, not a labeled evaluation set. A held-out set of real replies with per-label precision, especially for `unsubscribe`, is the next thing this needs.
+- `HubSpotCRM` shows the shape of the CRM calls but only writes status and score.
+
+## Run
 
 ```bash
 pip install pytest
-python run_demo.py        # full flow on 5 synthetic leads
-python -m pytest -q       # 10 tests
+python run_demo.py      # 5 synthetic leads through the full loop
+python -m pytest -q     # scoring, suppression, guardrails, handoff, bounce, low-confidence routing
 ```
 
-Live mode (optional): set `ANTHROPIC_API_KEY` and the agent uses Claude for reply classification and email writing. `HubSpotCRM` in `sdr_agent/crm.py` shows the CRM calls.
-
-## Code map
-
-| File | What it does |
-|---|---|
-| `sdr_agent/qualify.py` | Lead scoring with a reason for every point |
-| `sdr_agent/drafter.py` | Email templates the LLM personalizes |
-| `sdr_agent/llm.py` | `ClaudeClient` (live) and `RuleBasedClient` (offline) behind one interface |
-| `sdr_agent/guardrails.py` | Wrong-recipient, suppression, banned-claim and length checks |
-| `sdr_agent/pipeline.py` | The agent loop and the rollout modes |
-| `sdr_agent/crm.py` | CRM adapter (in-memory + HubSpot) |
-
-## What I would add next
-
-- A labeled test set of real replies to track classifier accuracy over time (today the check is human review).
-- Alerts on bounce rate and misclassification rate.
-- A/B tests on subject lines and first-touch copy.
-
----
-Built by [Vrutik Adani](https://www.linkedin.com/in/vrutikadani) · Technical Product Manager, GTM Systems & AI Engineering
+Set `ANTHROPIC_API_KEY` to classify replies with Claude instead of the offline rule-based client. Both sit behind the same interface in `sdr_agent/llm.py`.
