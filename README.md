@@ -1,5 +1,7 @@
 # AI First-Touch SDR Agent
 
+[![CI](https://github.com/vrutikadani/ai-sdr-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/vrutikadani/ai-sdr-agent/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+
 An AI agent that takes the first touch on every inbound lead. It scores the lead, writes a short personal email, reads the reply, and hands qualified buyers to a human SDR. Sales reps only work leads that are ready to talk.
 
 > **About this repo.** I built and run the production version of this agent at a medical aesthetics device company (Claude API + HubSpot). This is a clean-room rebuild of the same design with synthetic data, so the code is public and runs with no keys. No company data, prompts or customer records are included.
@@ -75,4 +77,4 @@ Live mode (optional): set `ANTHROPIC_API_KEY` and the agent uses Claude for repl
 - A/B tests on subject lines and first-touch copy.
 
 ---
-Built by [Vrutik Adani](https://www.linkedin.com/in/vrutikadani) · GTM Systems & AI Engineering
+Built by [Vrutik Adani](https://www.linkedin.com/in/vrutikadani) · Technical Product Manager, GTM Systems & AI Engineering
