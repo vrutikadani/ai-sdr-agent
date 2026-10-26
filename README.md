@@ -57,6 +57,7 @@ The agent has two modes. In `draft`, every email waits for a person. It stayed t
 | Same address submits the form again after opting out | Stopped at intake by the suppression list |
 | Bounce | Address suppressed; lead disqualified |
 | Webhook retry delivers the same reply twice | Skipped by Message-ID; no second task or email |
+| Reply comes from a colleague, a forward, or an old thread | Matched by In-Reply-To, then References, then sender; an address shared by two leads, or no match, goes to a person |
 | Out-of-office reply | Ignored; the agent waits for a real reply |
 
 ## Evaluation
@@ -92,7 +93,6 @@ Reply-label mix week over week, review-queue volume, bounce and opt-out rates, a
 
 ## Limitations
 
-- Replies are matched to leads by ID. There is no email-thread reconciliation, which production needs.
 - The evaluation set is synthetic and small. In production the check is still human review of live replies; real labeled replies should replace these over time.
 - `HubSpotCRM` shows the shape of the CRM calls but only writes status and score.
 

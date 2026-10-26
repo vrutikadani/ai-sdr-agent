@@ -100,3 +100,34 @@ def test_duplicate_delivery_does_not_double_handoff(agent):
     again = agent.handle_reply("L1", "Yes let's book a call", message_id="<msg-1@clinic.com>")
     assert first.action == "handoff" and again.action == "skip"
     assert len(agent.crm.tasks) == 1
+
+
+def _sent_id(agent, lead_id):
+    return agent.crm.leads[lead_id].thread[0]["message_id"]
+
+
+def test_reply_from_colleague_matches_by_thread(agent):
+    agent.handle_new_lead(make())
+    d = agent.handle_inbound({"from": "office.manager@clinic.com", "body": "Yes, book a call please",
+                              "message_id": "<r1@clinic.com>", "in_reply_to": _sent_id(agent, "L1")})
+    assert d.action == "handoff" and d.lead_id == "L1"
+
+
+def test_forwarded_thread_matches_by_references(agent):
+    agent.handle_new_lead(make())
+    refs = f"<unrelated@x.com> {_sent_id(agent, 'L1')}"
+    d = agent.handle_inbound({"from": "dr.diaz@othermail.com", "body": "Is it cleared for estheticians?",
+                              "message_id": "<r2@x.com>", "in_reply_to": "<fwd@x.com>", "references": refs})
+    assert d is not None and d.lead_id == "L1"
+
+
+def test_unknown_sender_without_thread_goes_to_a_person(agent):
+    agent.handle_new_lead(make())
+    assert agent.handle_inbound({"from": "stranger@else.com", "body": "pricing?", "message_id": "<r3@e.com>"}) is None
+    assert len(agent.unmatched) == 1 and not agent.crm.tasks
+
+
+def test_shared_address_is_ambiguous_not_guessed(agent):
+    agent.handle_new_lead(make(lead_id="L1", email="front.desk@group.com"))
+    agent.handle_new_lead(make(lead_id="L2", email="front.desk@group.com", first_name="Ana"))
+    assert agent.handle_inbound({"from": "front.desk@group.com", "body": "yes call us", "message_id": "<r4@g.com>"}) is None
