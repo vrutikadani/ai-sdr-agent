@@ -1,0 +1,7 @@
+[
+  {"lead_id": "L-1001", "first_name": "Maya", "last_name": "Torres", "email": "maya@glowdermclinic.com", "company": "Glow Derm Clinic", "specialty": "Dermatology", "state": "TX", "form_message": "Looking for pricing and financing options, want to add a new service this quarter."},
+  {"lead_id": "L-1002", "first_name": "Jordan", "last_name": "Lee", "email": "jordan.lee@gmail.com", "company": "Jordan Lee Aesthetics", "specialty": "Med Spa", "state": "CA", "form_message": "Saw this on Instagram. What is it?"},
+  {"lead_id": "L-1003", "first_name": "Priya", "last_name": "Shah", "email": "priya@harborplastics.com", "company": "Harbor Plastic Surgery", "specialty": "Plastic Surgery", "state": "FL", "form_message": "Interested in learning more."},
+  {"lead_id": "L-1004", "first_name": "Sam", "last_name": "Ortiz", "email": "sam.ortiz@yahoo.com", "company": "", "specialty": "", "state": "OH", "form_message": "I am a student looking for a job in aesthetics."},
+  {"lead_id": "L-1005", "first_name": "Elena", "last_name": "Novak", "email": "elena@lumenmedspa.com", "company": "Lumen Med Spa", "specialty": "Med Spa", "state": "NY", "form_message": "Can I see a demo?"}
+]
