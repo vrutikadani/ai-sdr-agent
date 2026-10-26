@@ -92,3 +92,11 @@ def test_scoring_is_explainable():
     lead = score_lead(make(form_message="can I get a demo and a quote"))
     assert lead.score >= 50
     assert any("pricing" in r for r in lead.score_reasons)
+
+
+def test_duplicate_delivery_does_not_double_handoff(agent):
+    agent.handle_new_lead(make())
+    first = agent.handle_reply("L1", "Yes let's book a call", message_id="<msg-1@clinic.com>")
+    again = agent.handle_reply("L1", "Yes let's book a call", message_id="<msg-1@clinic.com>")
+    assert first.action == "handoff" and again.action == "skip"
+    assert len(agent.crm.tasks) == 1
