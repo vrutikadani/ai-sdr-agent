@@ -7,6 +7,7 @@ Rollout modes (this is how it went live in production):
 from __future__ import annotations
 
 import re
+from typing import Optional
 
 from .crm import InMemoryCRM
 from .drafter import answer_question, first_touch
@@ -14,6 +15,7 @@ from .guardrails import check_draft
 from .llm import LLMClient
 from .models import Decision, Lead, LeadStatus, ReplyIntent
 from .qualify import is_qualified, score_lead
+from .threads import ThreadIndex
 
 OPT_OUT = re.compile(
     r"\b(unsubscribe|remove me|stop emailing|opt[- ]?out|take me off"
@@ -31,6 +33,9 @@ class SDRAgent:
         self.crm, self.llm, self.mode = crm, llm, mode
         self.log: list[Decision] = []
         self._processed: set[tuple[str, str]] = set()  # (lead_id, message_id) already handled
+        self.threads = ThreadIndex()
+        self.unmatched: list[dict] = []                 # inbound mail no lead could be matched to
+        self._sent_count = 0
 
     def _record(self, d: Decision) -> Decision:
         self.log.append(d)
@@ -42,7 +47,10 @@ class SDRAgent:
         if problems:
             self.crm.update_status(lead, LeadStatus.NEEDS_REVIEW)
             return self._record(Decision(lead.lead_id, "review", "; ".join(problems), draft, intent))
-        lead.thread.append({"role": "agent", "body": draft})
+        self._sent_count += 1
+        message_id = f"<{lead.lead_id}.{self._sent_count}@agent.local>"
+        lead.thread.append({"role": "agent", "body": draft, "message_id": message_id})
+        self.threads.record_sent(message_id, lead.lead_id)
         self.crm.update_status(lead, LeadStatus.CONTACTED)
         return self._record(Decision(lead.lead_id, "send_email", reason, draft, intent,
                                      requires_approval=(self.mode == "draft")))
@@ -50,6 +58,7 @@ class SDRAgent:
     # --- step 1: new inbound lead -------------------------------------------------
     def handle_new_lead(self, lead: Lead) -> Decision:
         self.crm.upsert(lead)
+        self.threads.register_lead(lead.lead_id, lead.email)
         score_lead(lead)
         if lead.email.lower() in self.crm.suppression:
             self.crm.update_status(lead, LeadStatus.OPTED_OUT)
@@ -65,7 +74,18 @@ class SDRAgent:
                                          requires_approval=False))
         return self._email(lead, first_touch(lead, self.llm), f"first touch (score {lead.score})")
 
-    # --- step 2: the lead replied -------------------------------------------------
+    # --- step 2a: an email arrived; find whose it is -----------------------------
+    def handle_inbound(self, email: dict) -> Optional[Decision]:
+        """email: {"from", "body", "message_id", "in_reply_to"?, "references"?}.
+        Returns the reply decision, or None if the email couldn't be matched to a lead
+        (it goes to `unmatched` for a person to sort)."""
+        r = self.threads.resolve(email["from"], email.get("in_reply_to", ""), email.get("references", ""))
+        if r.lead_id is None:
+            self.unmatched.append({**email, "reason": "no thread match and sender is not exactly one known lead"})
+            return None
+        return self.handle_reply(r.lead_id, email["body"], message_id=email.get("message_id"))
+
+    # --- step 2b: the lead replied ------------------------------------------------
     def handle_reply(self, lead_id: str, body: str, message_id: str | None = None) -> Decision:
         """Process one inbound reply. Pass the email's Message-ID so a webhook retry or a
         re-run of the inbox sync can't create a second SDR task or a second email."""
