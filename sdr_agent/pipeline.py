@@ -6,6 +6,8 @@ Rollout modes (this is how it went live in production):
 """
 from __future__ import annotations
 
+import re
+
 from .crm import InMemoryCRM
 from .drafter import answer_question, first_touch
 from .guardrails import check_draft
@@ -13,6 +15,7 @@ from .llm import LLMClient
 from .models import Decision, Lead, LeadStatus, ReplyIntent
 from .qualify import is_qualified, score_lead
 
+OPT_OUT = re.compile(r"\b(unsubscribe|remove me|stop emailing|opt[- ]?out|do not (contact|email))\b", re.I)
 CONFIDENCE_FLOOR = 0.6
 DISQUALIFY_FLOOR = 10  # below this, do not spend an email
 
@@ -60,7 +63,12 @@ class SDRAgent:
     def handle_reply(self, lead_id: str, body: str) -> Decision:
         lead = self.crm.leads[lead_id]
         lead.thread.append({"role": "lead", "body": body})
-        intent, conf = self.llm.classify_reply(body)
+        # Opt-out language is matched by rule before the model sees the reply, so a
+        # confident-but-wrong label can never override an unsubscribe.
+        if OPT_OUT.search(body):
+            intent, conf = ReplyIntent.UNSUBSCRIBE, 1.0
+        else:
+            intent, conf = self.llm.classify_reply(body)
 
         if intent == ReplyIntent.UNSUBSCRIBE:  # always honored, regardless of confidence
             self.crm.opt_out(lead)
