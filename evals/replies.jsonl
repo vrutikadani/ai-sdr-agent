@@ -1,0 +1,40 @@
+{"id": "r01", "label": "interested", "reply": "Yes, let's set up a call this week. Thursday afternoon works."}
+{"id": "r02", "label": "interested", "reply": "Can you send me a quote for one unit plus the starter consumables?"}
+{"id": "r03", "label": "interested", "reply": "We're ready to move forward. Who do I talk to about financing?"}
+{"id": "r04", "label": "interested", "reply": "Sounds good. My office manager will reach out to book a demo."}
+{"id": "r05", "label": "interested", "reply": "Pricing please."}
+{"id": "r06", "label": "interested", "reply": "I saw it at a conference and want to add it this quarter. What's next?"}
+{"id": "r07", "label": "question", "reply": "How long does a treatment take?"}
+{"id": "r08", "label": "question", "reply": "Is this cleared for use by estheticians or does it need a physician?"}
+{"id": "r09", "label": "question", "reply": "What's the warranty on the device?"}
+{"id": "r10", "label": "question", "reply": "Do you have any clinics using it near Scottsdale I could talk to?"}
+{"id": "r11", "label": "question", "reply": "What does the consumable cost per treatment look like?"}
+{"id": "r12", "label": "not_now", "reply": "Not right now, we just bought a laser. Maybe next year."}
+{"id": "r13", "label": "not_now", "reply": "Too busy through the holidays. Circle back in January."}
+{"id": "r14", "label": "not_now", "reply": "Budget is frozen until next quarter."}
+{"id": "r15", "label": "not_now", "reply": "Maybe later. We're renovating the space."}
+{"id": "r16", "label": "not_a_fit", "reply": "Not interested, thanks."}
+{"id": "r17", "label": "not_a_fit", "reply": "Wrong person. I'm the billing contractor, not the practice owner."}
+{"id": "r18", "label": "not_a_fit", "reply": "We already own one from your competitor and are happy with it."}
+{"id": "r19", "label": "not_a_fit", "reply": "We closed the med spa last month."}
+{"id": "r20", "label": "unsubscribe", "reply": "Unsubscribe"}
+{"id": "r21", "label": "unsubscribe", "reply": "Please remove me from your list."}
+{"id": "r22", "label": "unsubscribe", "reply": "Stop emailing me."}
+{"id": "r23", "label": "unsubscribe", "reply": "Do not contact me again."}
+{"id": "r24", "label": "unsubscribe", "reply": "Sounds interesting but please remove me, I get too many of these."}
+{"id": "r25", "label": "unsubscribe", "reply": "Can you send pricing? Actually never mind, take me off your mailing list."}
+{"id": "r26", "label": "unsubscribe", "reply": "Opt out"}
+{"id": "r27", "label": "unsubscribe", "reply": "How did you get my email? I never signed up. Don't email me."}
+{"id": "r28", "label": "bounce", "reply": "Delivery has failed to these recipients or groups."}
+{"id": "r29", "label": "bounce", "reply": "550 5.1.1 The email account that you tried to reach does not exist. Mailbox not found."}
+{"id": "r30", "label": "out_of_office", "reply": "I am out of the office until Monday with limited access to email."}
+{"id": "r31", "label": "out_of_office", "reply": "Auto-reply: I'm on vacation and will respond when I return."}
+{"id": "r32", "label": "unclear", "reply": "ok"}
+{"id": "r33", "label": "unclear", "reply": "Who is this?"}
+{"id": "r34", "label": "unclear", "reply": "Forwarding to Dr. Patel."}
+{"id": "r35", "label": "not_a_fit", "reply": "Not interested in a call, we don't do facials."}
+{"id": "r36", "label": "not_now", "reply": "Interesting, but not right now. Next quarter maybe."}
+{"id": "r37", "label": "interested", "reply": "My partner and I would like to see a demo. Is there a rep near Dallas?"}
+{"id": "r38", "label": "question", "reply": "Does it work on darker skin types?"}
+{"id": "r39", "label": "unsubscribe", "reply": "STOP"}
+{"id": "r40", "label": "not_a_fit", "reply": "We're a hospital system; we don't buy aesthetic devices."}
