@@ -30,6 +30,7 @@ class SDRAgent:
         assert mode in {"draft", "autonomous"}
         self.crm, self.llm, self.mode = crm, llm, mode
         self.log: list[Decision] = []
+        self._processed: set[tuple[str, str]] = set()  # (lead_id, message_id) already handled
 
     def _record(self, d: Decision) -> Decision:
         self.log.append(d)
@@ -65,7 +66,15 @@ class SDRAgent:
         return self._email(lead, first_touch(lead, self.llm), f"first touch (score {lead.score})")
 
     # --- step 2: the lead replied -------------------------------------------------
-    def handle_reply(self, lead_id: str, body: str) -> Decision:
+    def handle_reply(self, lead_id: str, body: str, message_id: str | None = None) -> Decision:
+        """Process one inbound reply. Pass the email's Message-ID so a webhook retry or a
+        re-run of the inbox sync can't create a second SDR task or a second email."""
+        if message_id:
+            key = (lead_id, message_id)
+            if key in self._processed:
+                return Decision(lead_id, "skip", "duplicate delivery of an already-processed reply",
+                                requires_approval=False)
+            self._processed.add(key)
         lead = self.crm.leads[lead_id]
         lead.thread.append({"role": "lead", "body": body})
         # Opt-out language is matched by rule before the model sees the reply, so a
