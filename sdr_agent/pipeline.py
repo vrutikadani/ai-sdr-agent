@@ -15,7 +15,12 @@ from .llm import LLMClient
 from .models import Decision, Lead, LeadStatus, ReplyIntent
 from .qualify import is_qualified, score_lead
 
-OPT_OUT = re.compile(r"\b(unsubscribe|remove me|stop emailing|opt[- ]?out|do not (contact|email))\b", re.I)
+OPT_OUT = re.compile(
+    r"\b(unsubscribe|remove me|stop emailing|opt[- ]?out|take me off"
+    r"|(do not|don'?t) (contact|email|e-mail|message))\b"
+    r"|^\s*stop[.!]?\s*$",            # a bare "STOP" is the most common opt-out of all
+    re.I,
+)
 CONFIDENCE_FLOOR = 0.6
 DISQUALIFY_FLOOR = 10  # below this, do not spend an email
 

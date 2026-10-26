@@ -18,3 +18,5 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python -m pytest -q
+      - name: Reply evaluation (fails on any critical outcome)
+        run: python evals/run_eval.py
