@@ -58,6 +58,27 @@ The agent has two modes. In `draft`, every email waits for a person. It stayed t
 | Bounce | Address suppressed; lead disqualified |
 | Out-of-office reply | Ignored; the agent waits for a real reply |
 
+## Evaluation
+
+`evals/replies.jsonl` holds 40 labeled replies, including the awkward ones: a request for pricing followed by "never mind, take me off your list," a bare "STOP," a confused "who is this?" `evals/run_eval.py` runs each one through the full loop and grades two things separately:
+
+- **Label accuracy:** did the classifier pick the right intent?
+- **Workflow outcome:** did the agent take the right action?
+
+The second is what matters. Outcomes are graded by cost: a wrong label that lands in human review is a *safe miss*; an SDR task for a non-buyer, or a buyer who gets a question instead of a call, is *costly*; any opt-out that isn't honored is *critical*, and CI fails on it.
+
+The first run caught three critical misses in the opt-out rule ("take me off your mailing list," "Don't email me," "STOP"). The rule was widened in the next commit. Current offline result:
+
+```
+label accuracy:     88%
+correct action:     88%
+outcomes:           costly 3, ok 35, safe-miss 2
+```
+
+The three costly cases are buyers the offline rule-based client reads as questions ("Who do I talk to about financing?"). That is a limit of the regex stand-in. The same set runs against Claude when `ANTHROPIC_API_KEY` is set, which is the comparison that matters before changing a prompt or a model.
+
+The opt-out rule is deliberately over-inclusive: "don't email me, call instead" is treated as an opt-out. A lost lead costs less than an ignored opt-out.
+
 ## What I watch
 
 Reply-label mix week over week, review-queue volume, bounce and opt-out rates, and how many handoffs SDRs reject. A jump in any of them means the inputs changed (new form, new campaign, new market) before it means the model got worse.
@@ -72,7 +93,7 @@ Reply-label mix week over week, review-queue volume, bounce and opt-out rates, a
 
 - Replies are matched to leads by ID. There is no email-thread reconciliation, which production needs.
 - Reply handling is not idempotent; the same reply processed twice would create a second SDR task.
-- The production check is human review, not a labeled evaluation set. A held-out set of real replies with per-label precision, especially for `unsubscribe`, is the next thing this needs.
+- The evaluation set is synthetic and small. In production the check is still human review of live replies; real labeled replies should replace these over time.
 - `HubSpotCRM` shows the shape of the CRM calls but only writes status and score.
 
 ## Run
@@ -81,6 +102,7 @@ Reply-label mix week over week, review-queue volume, bounce and opt-out rates, a
 pip install pytest
 python run_demo.py      # 5 synthetic leads through the full loop
 python -m pytest -q     # scoring, suppression, guardrails, handoff, bounce, low-confidence routing
+python evals/run_eval.py   # label accuracy vs workflow outcome on 40 labeled replies
 ```
 
 Set `ANTHROPIC_API_KEY` to classify replies with Claude instead of the offline rule-based client. Both sit behind the same interface in `sdr_agent/llm.py`.
