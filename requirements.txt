@@ -1,3 +1,3 @@
 anthropic>=0.40   # optional: live LLM mode
 requests>=2.32.3  # optional: live HubSpot mode
-pytest>=8.3
+pytest>=9.1.1
