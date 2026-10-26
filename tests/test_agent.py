@@ -45,6 +45,20 @@ def test_unsubscribe_is_always_honored(agent):
     assert d2.action == "stop"
 
 
+class ConfidentlyWrongModel(RuleBasedClient):
+    """A model that labels everything 'interested' with high confidence."""
+    def classify_reply(self, body):
+        return ReplyIntent.INTERESTED, 0.99
+
+
+def test_opt_out_rule_runs_before_the_model():
+    agent = SDRAgent(InMemoryCRM(), ConfidentlyWrongModel(), mode="draft")
+    agent.handle_new_lead(make())
+    d = agent.handle_reply("L1", "Sounds interesting but please remove me from this list")
+    assert d.intent == ReplyIntent.UNSUBSCRIBE and d.action == "stop"
+    assert not agent.crm.tasks  # no SDR handoff despite the model's label
+
+
 def test_interested_reply_hands_off(agent):
     agent.handle_new_lead(make())
     assert agent.handle_reply("L1", "Yes let's book a call").action == "handoff"
