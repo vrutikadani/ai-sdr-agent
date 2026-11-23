@@ -129,3 +129,5 @@ python evals/run_eval.py   # label accuracy vs workflow outcome on 40 labeled re
 ```
 
 To classify replies with Claude instead of the offline rule-based client, set `SDR_LIVE_LLM=1` and `ANTHROPIC_API_KEY`. An API key alone does not switch modes. Both clients sit behind the same interface in `sdr_agent/llm.py`. See `docs/INTERVIEW_WALKTHROUGH.md` for a guided trace through the code.
+
+Design context (GTM engineering layers, comparison with LangChain's GTM agents): [`docs/DESIGN_CONTEXT.md`](docs/DESIGN_CONTEXT.md).
