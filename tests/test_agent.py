@@ -26,7 +26,7 @@ def test_strong_lead_goes_straight_to_sdr(agent):
 
 def test_medium_lead_gets_first_touch_queued_for_approval(agent):
     d = agent.handle_new_lead(make())
-    assert d.action == "send_email" and d.requires_approval
+    assert d.action == "queue_for_approval" and d.requires_approval and d.draft_id
     assert "Ana" in d.draft
 
 
@@ -103,6 +103,9 @@ def test_duplicate_delivery_does_not_double_handoff(agent):
 
 
 def _sent_id(agent, lead_id):
+    """Approve the queued first touch (draft mode) and return its Message-ID."""
+    draft_id = next(k for k, v in agent.drafts.items() if v["lead_id"] == lead_id and v["state"] == "pending")
+    agent.approve(draft_id, approver="rep")
     return agent.crm.leads[lead_id].thread[0]["message_id"]
 
 

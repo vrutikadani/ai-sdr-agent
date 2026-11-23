@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Optional
 
 
@@ -19,7 +19,8 @@ class ReplyIntent(str, Enum):
 
 class LeadStatus(str, Enum):
     NEW = "new"
-    CONTACTED = "contacted"
+    PENDING_APPROVAL = "pending_approval"  # draft waits for a person to approve
+    CONTACTED = "contacted"            # an email was actually sent
     QUALIFIED = "qualified"            # handed to an SDR
     NURTURE = "nurture"
     DISQUALIFIED = "disqualified"
@@ -45,12 +46,29 @@ class Lead:
     owner: Optional[str] = None
 
 
+class Action(StrEnum):
+    """Every action the agent can take. Anything else is a bug and raises."""
+    SEND_EMAIL = "send_email"                  # email sent (autonomous, or after approval)
+    QUEUE_FOR_APPROVAL = "queue_for_approval"  # draft waits for a person
+    HANDOFF = "handoff"                        # SDR task created
+    NURTURE = "nurture"
+    STOP = "stop"
+    REVIEW = "review"                          # a person must look
+    WAIT = "wait"                              # auto-reply; do nothing
+    SKIP = "skip"                              # duplicate event; already processed
+    BLOCKED = "blocked"                        # state machine refused the transition
+
+
 @dataclass
 class Decision:
     """What the agent decided to do next, and why. Every decision is logged."""
     lead_id: str
-    action: str                        # send_email | handoff | nurture | stop | review
+    action: Action
     reason: str
     draft: Optional[str] = None
     intent: Optional[ReplyIntent] = None
     requires_approval: bool = True
+    draft_id: Optional[str] = None
+
+    def __post_init__(self):
+        self.action = Action(self.action)  # ValueError on an unknown action
