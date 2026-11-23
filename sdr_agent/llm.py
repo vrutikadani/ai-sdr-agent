@@ -2,11 +2,18 @@
 
 The agent talks to an `LLMClient` interface, so the same pipeline runs:
   * offline with `RuleBasedClient` (deterministic, used in tests and the demo), or
-  * live with `ClaudeClient` (Anthropic Messages API) when ANTHROPIC_API_KEY is set.
+  * live with `ClaudeClient` (Anthropic Messages API), only when SDR_LIVE_LLM=1.
+
+An API key in the environment is not enough to go live. Tests, the demo and the
+eval stay offline unless live mode is asked for by name.
+
+Whatever a client returns is checked by `validate_classification` before the
+pipeline uses it. Bad output becomes ("unclear", 0.0), which goes to review.
 """
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from typing import Protocol
@@ -22,6 +29,21 @@ class LLMClient(Protocol):
 CLASSIFY_SYSTEM = """You classify replies to a sales email.
 Return JSON only: {"intent": one of %s, "confidence": 0-1}.
 If unsure, use "unclear". Opt-out language always means "unsubscribe".""" % [i.value for i in ReplyIntent]
+
+
+def validate_classification(raw) -> tuple[ReplyIntent, float]:
+    """Accept only (known intent, confidence in [0, 1]). Anything else -> (UNCLEAR, 0.0)."""
+    try:
+        intent, conf = raw
+        intent = ReplyIntent(intent)
+    except (TypeError, ValueError):
+        return ReplyIntent.UNCLEAR, 0.0
+    if isinstance(conf, bool) or not isinstance(conf, (int, float)):
+        return ReplyIntent.UNCLEAR, 0.0
+    conf = float(conf)
+    if math.isnan(conf) or not 0.0 <= conf <= 1.0:
+        return ReplyIntent.UNCLEAR, 0.0
+    return intent, conf
 
 
 class ClaudeClient:
@@ -43,7 +65,7 @@ class ClaudeClient:
         raw = self._ask(CLASSIFY_SYSTEM, body, max_tokens=60)
         try:
             data = json.loads(re.search(r"\{.*\}", raw, re.S).group(0))
-            return ReplyIntent(data["intent"]), float(data["confidence"])
+            return validate_classification((data["intent"], data["confidence"]))
         except Exception:
             return ReplyIntent.UNCLEAR, 0.0
 
@@ -75,10 +97,13 @@ class RuleBasedClient:
         return prompt  # the drafter's template is already a complete email
 
 
+LIVE_FLAG = "SDR_LIVE_LLM"
+
+
 def default_client() -> LLMClient:
-    if os.getenv("ANTHROPIC_API_KEY"):
-        try:
-            return ClaudeClient()
-        except ImportError:
-            pass
-    return RuleBasedClient()
+    """Offline unless SDR_LIVE_LLM=1. If live mode is asked for and cannot start, fail loudly."""
+    if os.getenv(LIVE_FLAG) != "1":
+        return RuleBasedClient()
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise RuntimeError(f"{LIVE_FLAG}=1 but ANTHROPIC_API_KEY is not set")
+    return ClaudeClient()  # ImportError here means `pip install anthropic`
