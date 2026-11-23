@@ -4,11 +4,11 @@
 
 First touch on inbound leads: score the lead, send one short email, read the reply, and hand real buyers to an SDR with the reasons attached.
 
-This is a reference implementation of an agent I designed and operate on the Claude API and HubSpot. It is rebuilt from scratch with synthetic leads. No production prompts, data or source code are included.
+Clean-room reference implementation using synthetic data, inspired by an inbound lead-qualification workflow I worked on. Not employer production source code; no production metrics are reported here.
 
 ## Why it exists
 
-Inbound form fills waited in a queue until an SDR had time. Most of them were students, job seekers or "just curious," so SDR hours went into first emails that went nowhere while real buyers cooled off. The production version removed roughly 12 hours a week of that work.
+Inbound form fills waited in a queue until an SDR had time. Most of them were students, job seekers or "just curious," so SDR hours went into first emails that went nowhere while real buyers cooled off.
 
 ## Who decides what
 
@@ -18,7 +18,8 @@ The design question was not "what can the model do" but "what should it never be
 |---|---|---|
 | Is this lead worth an email? | Rules (`qualify.py`) | SDRs have to trust the routing, so every point has a written reason |
 | Is this address suppressed? | Rules (`crm.py`) | An opt-out is a legal fact, not a judgment call |
-| Is this draft safe to send? | Rules (`guardrails.py`) | Wrong recipient, unfilled template, banned claims and length are checkable |
+| Can the lead move to this status? | Rules (`state.py`) | Opted-out and disqualified leads are terminal; an SDR-owned lead is not touched again |
+| Is this draft safe to send? | Rules (`guardrails.py`) | Wrong recipient, unfilled template, banned phrases, claims not on the approved-facts list, and length are checkable |
 | What did the reply mean? | Model (`llm.py`) | The only genuinely ambiguous step |
 | What happens next? | Rules (`pipeline.py`) | The model's label picks a branch; it never writes to the CRM directly |
 | Anything uncertain | A person | Confidence below 0.6, an unclear label, or any guardrail failure goes to review |
@@ -33,7 +34,9 @@ flowchart LR
     B -->|between| C[Draft from template]
     C --> G{Guardrails}
     G -->|fail| R[Human review]
-    G -->|pass| S[Send or queue]
+    G -->|pass, draft mode| P[Pending approval]
+    P -->|approve| S[Send]
+    G -->|pass, autonomous| S
     S --> Y[Reply]
     Y --> K[Classify: model]
     K -->|interested| H
@@ -45,18 +48,26 @@ flowchart LR
 
 ## Rollout
 
-The agent has two modes. In `draft`, every email waits for a person. It stayed there until I had reviewed 50+ drafts and reply labels without a wrong one, and only then moved to `autonomous`. Even in `autonomous`, a guardrail failure still queues for review. The stop condition was agreed in advance: one email to the wrong person, or one wrong draft, pauses sending.
+The agent has two modes. In `draft`, every email is stored as `pending_approval` with a `draft_id`. Nothing is sent and the lead is not marked contacted until a person calls `SDRAgent.approve(draft_id, approver)`. Approval re-checks the guardrails and the lead's state, so a lead who opted out while the draft waited is not emailed. Only the lead's newest draft can be approved; queuing a new one voids the old one. If the CRM write fails during approval, nothing is sent, the draft stays pending, and approving again retries. In `autonomous`, clean drafts send on their own, and a guardrail failure still goes to review.
+
+The intended rollout: stay in `draft` until a set number of drafts and reply labels have been reviewed with no wrong one, then move to `autonomous`. Agree the stop condition in advance: one email to the wrong person, or one wrong draft, pauses sending.
 
 ## Failure modes
 
 | What goes wrong | What the system does |
 |---|---|
-| Model returns malformed or unexpected output | Parsed as `unclear` with confidence 0, goes to review |
+| Model returns malformed or unexpected output | Unknown intent, or confidence outside [0, 1], becomes `unclear` with confidence 0 and goes to review |
+| Classifier raises (timeout, API error) | The error is raised, the event is not marked done, and a retry processes it |
 | Model is confident but wrong on an opt-out | Opt-out patterns are checked first; unsubscribe wins regardless of confidence |
-| Draft greets the wrong person or leaks a `{{variable}}` | Blocked before send, lead marked `needs_review` |
+| Draft greets the wrong person or leaks a `{{variable}}` | Blocked before send, lead marked `needs_review`. The name must match as a whole word ("Anabel" does not pass for "Ana") |
+| Draft states a price, FDA status, insurance coverage or outcome | Blocked unless the wording is on `APPROVED_FACTS` in `guardrails.py` (empty by default) |
 | Same address submits the form again after opting out | Stopped at intake by the suppression list |
 | Bounce | Address suppressed; lead disqualified |
-| Webhook retry delivers the same reply twice | Skipped by Message-ID; no second task or email |
+| Webhook retry delivers the same reply twice | Skipped by Message-ID, or by a hash of lead + sender + normalized body when there is no Message-ID |
+| Form webhook delivered twice | Skipped by form submission id; a re-submission keeps the lead's thread and status |
+| Opted-out or disqualified lead replies "yes, book a call" | Transition refused by the state machine and logged in `SDRAgent.blocked`; no task |
+| Late or out-of-order reply after handoff | Refused; an SDR-owned lead gets no second task, no email and no nurture |
+| CRM write fails | `CRMWriteError`; lead goes to `needs_review`, the failure is kept in `SDRAgent.outbox`, and the event is not marked done |
 | Reply comes from a colleague, a forward, or an old thread | Matched by In-Reply-To, then References, then sender; an address shared by two leads, or no match, goes to a person |
 | Out-of-office reply | Ignored; the agent waits for a real reply |
 
@@ -77,32 +88,44 @@ correct action:     88%
 outcomes:           costly 3, ok 35, safe-miss 2
 ```
 
-The three costly cases are buyers the offline rule-based client reads as questions ("Who do I talk to about financing?"). That is a limit of the regex stand-in. The same set runs against Claude when `ANTHROPIC_API_KEY` is set, which is the comparison that matters before changing a prompt or a model.
+The three costly cases are buyers the offline rule-based client reads as questions ("Who do I talk to about financing?"). That is a limit of the regex stand-in. The same set can run against Claude with `SDR_LIVE_LLM=1` and `ANTHROPIC_API_KEY` set, which is the comparison that matters before changing a prompt or a model. No live results are reported here.
 
 The opt-out rule is deliberately over-inclusive: "don't email me, call instead" is treated as an opt-out. A lost lead costs less than an ignored opt-out.
 
-## What I watch
+## What to monitor (proposed)
 
-Reply-label mix week over week, review-queue volume, bounce and opt-out rates, and how many handoffs SDRs reject. A jump in any of them means the inputs changed (new form, new campaign, new market) before it means the model got worse.
+Reply-label mix week over week, review-queue volume, outbox (failed CRM write) volume, blocked transitions, bounce and opt-out rates, and how many handoffs SDRs reject. A jump in any of them means the inputs changed (new form, new campaign, new market) before it means the model got worse.
 
 ## Tradeoffs
 
-- **Email, not voice.** I tested voice as the first channel and dropped it. Email is cheaper, auditable, and this buyer replies to email.
-- **Built, not bought.** Off-the-shelf AI SDR tools couldn't use our scoring rules or CRM fields, or give us control of what gets sent.
+- **Email, not voice.** Email is cheaper, leaves a written record, and is easy to review before it goes out.
+- **Built, not bought.** A small build keeps the scoring rules, CRM fields and sent text under the team's control. The cost is owning the code.
 - **Templates the model fills, not free-form writing.** Less "personal," much easier to review and much harder to get wrong.
+
+## What is implemented, mocked, or proposed
+
+| Part | Status |
+|---|---|
+| Scoring, guardrails, state machine, reply routing, approval step | Implemented and tested |
+| Idempotency store (`idempotency.py`, SQLite, in-memory or file) | Implemented and tested |
+| Classifier | Offline rule-based client in tests; `ClaudeClient` is optional, opt-in, and not exercised in CI |
+| CRM | `InMemoryCRM` in tests. `HubSpotCRM` is an optional sketch: its calls are tested only against a fake session, never against a live portal |
+| Sending email | Mocked: `SDRAgent.sent` records what would be sent. No mail provider is wired |
+| Replaying the outbox, loading suppression from the CRM at startup, locking for concurrent workers | Proposed, not built |
 
 ## Limitations
 
-- The evaluation set is synthetic and small. In production the check is still human review of live replies; real labeled replies should replace these over time.
-- `HubSpotCRM` shows the shape of the CRM calls but only writes status and score.
+- The evaluation set is synthetic and small. Real labeled replies and human review of live replies would be needed before trusting the numbers.
+- The idempotency store has no claim step, so two workers handling the same event at the same moment could both process it.
+- Drafts waiting for approval live in memory and are lost on restart.
 
 ## Run
 
 ```bash
 pip install pytest
 python run_demo.py      # 5 synthetic leads through the full loop
-python -m pytest -q     # scoring, suppression, guardrails, handoff, bounce, low-confidence routing
+python -m pytest -q     # 47 tests: scoring, guardrails, state machine, idempotency, CRM failures, approval
 python evals/run_eval.py   # label accuracy vs workflow outcome on 40 labeled replies
 ```
 
-Set `ANTHROPIC_API_KEY` to classify replies with Claude instead of the offline rule-based client. Both sit behind the same interface in `sdr_agent/llm.py`.
+To classify replies with Claude instead of the offline rule-based client, set `SDR_LIVE_LLM=1` and `ANTHROPIC_API_KEY`. An API key alone does not switch modes. Both clients sit behind the same interface in `sdr_agent/llm.py`. See `docs/INTERVIEW_WALKTHROUGH.md` for a guided trace through the code.

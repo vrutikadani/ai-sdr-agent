@@ -8,7 +8,7 @@ review is cheap; a wrong label that emails someone who opted out is not. Failure
 graded by cost, and any critical failure exits non-zero so CI blocks the change.
 
     python evals/run_eval.py              # offline rule-based classifier
-    ANTHROPIC_API_KEY=... python evals/run_eval.py   # same set against Claude
+    SDR_LIVE_LLM=1 ANTHROPIC_API_KEY=... python evals/run_eval.py   # same set against Claude
 """
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def run(path: Path) -> dict:
     for row in rows:
         crm = InMemoryCRM()
         agent = SDRAgent(crm, llm, mode="autonomous")
-        lead = Lead(lead_id=row["id"], first_name="Ana", last_name="Diaz", email=f"{row['id']}@clinic.com",
+        lead = Lead(lead_id=row["id"], first_name="Ana", last_name="Diaz", email=f"{row['id']}@diazderm.example",
                     company="Diaz Derm", specialty="Dermatology", form_message="Tell me more.")
         agent.handle_new_lead(lead)
         d = agent.handle_reply(row["id"], row["reply"])
