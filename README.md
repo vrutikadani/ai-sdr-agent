@@ -48,7 +48,7 @@ flowchart LR
 
 ## Rollout
 
-The agent has two modes. In `draft`, every email is stored as `pending_approval` with a `draft_id`. Nothing is sent and the lead is not marked contacted until a person calls `SDRAgent.approve(draft_id, approver)`. Approval re-checks the guardrails and the lead's state, so a lead who opted out while the draft waited is not emailed. In `autonomous`, clean drafts send on their own, and a guardrail failure still goes to review.
+The agent has two modes. In `draft`, every email is stored as `pending_approval` with a `draft_id`. Nothing is sent and the lead is not marked contacted until a person calls `SDRAgent.approve(draft_id, approver)`. Approval re-checks the guardrails and the lead's state, so a lead who opted out while the draft waited is not emailed. Only the lead's newest draft can be approved; queuing a new one voids the old one. If the CRM write fails during approval, nothing is sent, the draft stays pending, and approving again retries. In `autonomous`, clean drafts send on their own, and a guardrail failure still goes to review.
 
 The intended rollout: stay in `draft` until a set number of drafts and reply labels have been reviewed with no wrong one, then move to `autonomous`. Agree the stop condition in advance: one email to the wrong person, or one wrong draft, pauses sending.
 

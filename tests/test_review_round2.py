@@ -34,6 +34,15 @@ def test_approval_retry_sends_after_crm_recovers():
     assert len(agent.sent) == 1
 
 
+def test_failed_approval_still_blocks_send_after_opt_out():
+    agent = SDRAgent(ContactedFailsOnce(), RuleBasedClient(), mode="draft")
+    d = agent.handle_new_lead(make())
+    agent.approve(d.draft_id, approver="rep@example.com")
+    agent.handle_reply("L1", "Please unsubscribe me", message_id="<m1@x.example>")
+    assert agent.approve(d.draft_id, approver="rep@example.com").action != "send_email"
+    assert agent.sent == []
+
+
 def test_superseded_draft_cannot_be_approved():
     agent = SDRAgent(InMemoryCRM(), RuleBasedClient(), mode="draft")
     a = agent.handle_new_lead(make())

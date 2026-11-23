@@ -10,7 +10,8 @@ Every inbound event (form webhook, reply) goes through the same three rules:
   3. Mark the event done only after its CRM writes succeeded. A CRMWriteError sends
      the lead to review and records the failure in `outbox`. Any other error (for
      example the classifier timing out) is raised, nothing is marked, and a retry
-     of the same event runs again.
+     of the same event runs again. (approve() is the exception: a failed send leaves
+     the lead pending_approval so approving again retries.)
 """
 from __future__ import annotations
 
@@ -50,6 +51,7 @@ class SDRAgent:
         self.blocked: list[dict] = []     # transitions the state machine refused
         self.outbox: list[dict] = []      # failed CRM writes, for a person or a replay
         self.drafts: dict[str, dict] = {}  # draft_id -> draft (pending | sent | void)
+        self.current_draft: dict[str, str] = {}  # lead_id -> the only draft_id approve() will send
         self.sent: list[dict] = []        # stand-in for a mail provider: what was "sent"
         self.threads = ThreadIndex()
         self.unmatched: list[dict] = []   # inbound mail no lead could be matched to
@@ -121,8 +123,12 @@ class SDRAgent:
         if self.mode == "autonomous":
             return self._send(lead, draft, reason, intent)
         self.crm.update_status(lead, LeadStatus.PENDING_APPROVAL)
+        old = self.drafts.get(self.current_draft.get(lead.lead_id, ""))
+        if old is not None and old["state"] == "pending":
+            old["state"] = "void"  # superseded: only the newest draft may be approved
         self._draft_count += 1
         draft_id = f"draft-{lead.lead_id}-{self._draft_count}"
+        self.current_draft[lead.lead_id] = draft_id
         self.drafts[draft_id] = {"lead_id": lead.lead_id, "body": draft, "reason": reason,
                                  "intent": intent, "state": "pending"}
         return self._record(Decision(lead.lead_id, Action.QUEUE_FOR_APPROVAL, reason, draft, intent,
@@ -182,18 +188,29 @@ class SDRAgent:
         lead = self.crm.leads[entry["lead_id"]]
         if entry["state"] != "pending":
             return Decision(lead.lead_id, Action.SKIP, f"draft already {entry['state']}", requires_approval=False)
-        if lead.status != LeadStatus.PENDING_APPROVAL:
-            entry["state"] = "void"  # the lead moved on (opted out, handed off, ...)
+        if lead.status != LeadStatus.PENDING_APPROVAL or self.current_draft.get(lead.lead_id) != draft_id:
+            entry["state"] = "void"  # the lead moved on (opted out, handed off, newer draft, ...)
             return self._blocked(lead, LeadStatus.CONTACTED, f"draft {draft_id} is stale", entry["intent"])
         problems = check_draft(lead, entry["body"], self.crm.suppression)  # suppression may have changed
-        try:
-            if problems:
-                entry["state"] = "void"
+        if problems:
+            entry["state"] = "void"
+            try:
                 return self._go(lead, LeadStatus.NEEDS_REVIEW, Action.REVIEW, "; ".join(problems),
                                 entry["intent"], draft=entry["body"], requires_approval=True)
+            except CRMWriteError as e:
+                return self._crm_failed(lead, e, f"approve:{draft_id}", {"draft_id": draft_id})
+        try:
             d = self._send(lead, entry["body"], entry["reason"], entry["intent"], approved_by=approver)
-        except CRMWriteError as e:  # draft stays pending; approving again retries
-            return self._crm_failed(lead, e, f"approve:{draft_id}", {"draft_id": draft_id})
+        except CRMWriteError as e:
+            # Nothing was sent. The lead stays pending_approval (the CRM still says so) and
+            # the draft stays pending, so approving again retries with every check re-run.
+            self.outbox.append({"lead_id": lead.lead_id, "op": e.op, "error": e.detail,
+                                "event": f"approve:{draft_id}", "payload": {"draft_id": draft_id}})
+            d = Decision(lead.lead_id, Action.REVIEW, f"CRM write failed ({e.op}): {e.detail}; "
+                         f"approve {draft_id} again to retry", draft=entry["body"], intent=entry["intent"],
+                         draft_id=draft_id)
+            self.log.append(d)
+            return d
         entry["state"] = "sent"
         return d
 
@@ -262,6 +279,7 @@ class SDRAgent:
         if intent == ReplyIntent.NOT_A_FIT:
             return self._go(lead, LeadStatus.DISQUALIFIED, Action.STOP, "not a fit", intent)
         if intent == ReplyIntent.BOUNCE:
+            self.crm.suppression.add(lead.email.lower())  # local send gate first, even if the CRM write fails
             self.crm.suppress(lead, "hard_bounce")
             return self._go(lead, LeadStatus.DISQUALIFIED, Action.STOP, "hard bounce - suppressed", intent)
         # out of office: do nothing, wait for the real reply
