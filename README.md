@@ -4,11 +4,11 @@
 
 First touch on inbound leads: score the lead, send one short email, read the reply, and hand real buyers to an SDR with the reasons attached.
 
-This is a reference implementation of an agent I designed and operate on the Claude API and HubSpot. It is rebuilt from scratch with synthetic leads. No production prompts, data or source code are included.
+Clean-room reference implementation using synthetic data, inspired by an inbound lead-qualification workflow I worked on. Not employer production source code; no production metrics are reported here.
 
 ## Why it exists
 
-Inbound form fills waited in a queue until an SDR had time. Most of them were students, job seekers or "just curious," so SDR hours went into first emails that went nowhere while real buyers cooled off. The production version removed roughly 12 hours a week of that work.
+Inbound form fills waited in a queue until an SDR had time. Most of them were students, job seekers or "just curious," so SDR hours went into first emails that went nowhere while real buyers cooled off.
 
 ## Who decides what
 
@@ -45,7 +45,7 @@ flowchart LR
 
 ## Rollout
 
-The agent has two modes. In `draft`, every email waits for a person. It stayed there until I had reviewed 50+ drafts and reply labels without a wrong one, and only then moved to `autonomous`. Even in `autonomous`, a guardrail failure still queues for review. The stop condition was agreed in advance: one email to the wrong person, or one wrong draft, pauses sending.
+The agent has two modes. In `draft`, every email waits for a person. The intended rollout is to stay there until a set number of drafts and reply labels have been reviewed with no wrong one, then move to `autonomous`. Even in `autonomous`, a guardrail failure still queues for review. Agree the stop condition in advance: one email to the wrong person, or one wrong draft, pauses sending.
 
 ## Failure modes
 
@@ -81,14 +81,14 @@ The three costly cases are buyers the offline rule-based client reads as questio
 
 The opt-out rule is deliberately over-inclusive: "don't email me, call instead" is treated as an opt-out. A lost lead costs less than an ignored opt-out.
 
-## What I watch
+## What to monitor (proposed)
 
 Reply-label mix week over week, review-queue volume, bounce and opt-out rates, and how many handoffs SDRs reject. A jump in any of them means the inputs changed (new form, new campaign, new market) before it means the model got worse.
 
 ## Tradeoffs
 
-- **Email, not voice.** I tested voice as the first channel and dropped it. Email is cheaper, auditable, and this buyer replies to email.
-- **Built, not bought.** Off-the-shelf AI SDR tools couldn't use our scoring rules or CRM fields, or give us control of what gets sent.
+- **Email, not voice.** Email is cheaper, leaves a written record, and is easy to review before it goes out.
+- **Built, not bought.** A small build keeps the scoring rules, CRM fields and sent text under the team's control. The cost is owning the code.
 - **Templates the model fills, not free-form writing.** Less "personal," much easier to review and much harder to get wrong.
 
 ## Limitations
